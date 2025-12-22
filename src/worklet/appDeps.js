@@ -628,7 +628,7 @@ export const closeAllInstances = async () => {
  */
 
 /**
- * @returns {Promise<Array<string>>}
+ * @returns {Promise<Array<{key: string, isDefault: boolean}>>}
  */
 export const getBlindMirrors = async () => {
   if (!isActiveVaultInitialized) {
@@ -636,7 +636,25 @@ export const getBlindMirrors = async () => {
   }
 
   const mirrors = await activeVaultInstance.getMirror()
-  return Array.isArray(mirrors) ? mirrors : []
+  const mirrorsArray = Array.isArray(mirrors) ? mirrors : []
+
+  const metadata = await activeVaultGet('mirror-metadata').catch(() => null)
+  const isDefault = metadata?.isDefault ?? false
+
+  const enrichedMirrors = mirrorsArray.map((mirror) => ({
+    ...mirror,
+    isDefault
+  }))
+
+  return enrichedMirrors
+}
+
+/**
+ * @param {boolean} isDefault
+ * @returns {Promise<void>}
+ */
+const setMirrorMetadata = async (isDefault) => {
+  await activeVaultAdd('mirror-metadata', { isDefault })
 }
 
 /**
@@ -655,6 +673,8 @@ export const addBlindMirrors = async (mirrors) => {
   await Promise.all(
     mirrors.map((mirror) => activeVaultInstance.addMirror(mirror))
   )
+
+  await setMirrorMetadata(false)
 }
 
 /**
@@ -683,6 +703,8 @@ export const addDefaultBlindMirrors = async () => {
   await Promise.all(
     defaultMirrorKeys.map((key) => activeVaultInstance.addMirror(key))
   )
+
+  await setMirrorMetadata(true)
 }
 
 /**
