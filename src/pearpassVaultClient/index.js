@@ -351,7 +351,7 @@ export class PearpassVaultClient extends EventEmitter {
 
   /**
    * Get blind mirrors for the active vault
-   * @returns {Promise<Array<string>>}
+   * @returns {Promise<Array<{key: string, isDefault: boolean}>>}
    */
   async getBlindMirrors() {
     return this._handleRequest({
