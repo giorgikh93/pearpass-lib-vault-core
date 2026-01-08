@@ -31,7 +31,10 @@ export class RateLimiter {
       const data = await this.storage.get(STORAGE_KEY)
       return data || { ...DEFAULT_DATA }
     } catch {
-      return { ...DEFAULT_DATA }
+      return {
+        failedAttempts: MAX_ATTEMPTS,
+        lockoutUntil: Date.now() + LOCKOUT_DURATION_MS
+      }
     }
   }
 
@@ -72,7 +75,12 @@ export class RateLimiter {
   }
 
   async recordFailure() {
-    const data = await this.getData()
+    let data
+    try {
+      data = await this.getData()
+    } catch {
+      throw new Error('Rate limiter unavailable - denying attempt')
+    }
 
     if (
       data.lockoutUntil !== null &&
@@ -88,7 +96,11 @@ export class RateLimiter {
       data.lockoutUntil = Date.now() + LOCKOUT_DURATION_MS
     }
 
-    await this.storage.add(STORAGE_KEY, data)
+    try {
+      await this.storage.add(STORAGE_KEY, data)
+    } catch {
+      throw new Error('Failed to record attempt - denying access')
+    }
   }
 
   async reset() {
