@@ -456,8 +456,7 @@ export class PearpassVaultClient extends EventEmitter {
    * @returns {Promise<Object>}
    */
   async hashPassword(password) {
-    const buffer = Buffer.from(password)
-    const passwordString = buffer.toString('base64')
+    const passwordString = Buffer.from(password).toString('base64')
     return this._handleRequest({
       command: API.ENCRYPTION_HASH_PASSWORD,
       data: { password: passwordString }
@@ -497,8 +496,7 @@ export class PearpassVaultClient extends EventEmitter {
    * @returns {Promise<Object>}
    */
   async getDecryptionKey({ salt, password }) {
-    const buffer = Buffer.from(password)
-    const passwordString = buffer.toString('base64')
+    const passwordString = Buffer.from(password).toString('base64')
     return this._handleRequest({
       command: API.ENCRYPTION_GET_DECRYPTION_KEY,
       data: { salt, password: passwordString }
