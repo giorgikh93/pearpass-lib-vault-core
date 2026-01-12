@@ -12,23 +12,32 @@ import sodium from 'sodium-native'
 export const encryptVaultWithKey = (hashedPassword, key) => {
   const nonce = sodium.sodium_malloc(sodium.crypto_secretbox_NONCEBYTES)
 
-  const keyBuffer = Buffer.from(key, 'base64')
+  const keyLen = Buffer.byteLength(key, 'base64')
+  const keyBuffer = sodium.sodium_malloc(keyLen)
+  keyBuffer.write(key, 'base64')
 
   const ciphertext = sodium.sodium_malloc(
-    keyBuffer.length + sodium.crypto_secretbox_MACBYTES
+    keyLen + sodium.crypto_secretbox_MACBYTES
   )
+
+  const hashedPasswordBuf = sodium.sodium_malloc(
+    sodium.crypto_secretbox_KEYBYTES
+  )
+  hashedPasswordBuf.write(hashedPassword, 'hex')
 
   sodium.randombytes_buf(nonce)
 
-  sodium.crypto_secretbox_easy(
-    ciphertext,
-    keyBuffer,
-    nonce,
-    Buffer.from(hashedPassword, 'hex')
-  )
+  sodium.crypto_secretbox_easy(ciphertext, keyBuffer, nonce, hashedPasswordBuf)
 
-  return {
+  const result = {
     ciphertext: ciphertext.toString('base64'),
     nonce: nonce.toString('base64')
   }
+
+  sodium.sodium_memzero(nonce)
+  sodium.sodium_memzero(keyBuffer)
+  sodium.sodium_memzero(ciphertext)
+  sodium.sodium_memzero(hashedPasswordBuf)
+
+  return result
 }
