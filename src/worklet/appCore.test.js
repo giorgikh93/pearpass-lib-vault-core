@@ -136,6 +136,15 @@ jest.mock('./decryptVaultKey', () => ({
   decryptVaultKey: (...args) => mockDecryptVaultKey(...args)
 }))
 
+jest.mock('./masterPasswordManager', () => ({
+  masterPasswordManager: {
+    createMasterPassword: jest.fn(() => ({ data: 'created' })),
+    initWithPassword: jest.fn(() => ({ data: 'init' })),
+    updateMasterPassword: jest.fn(() => ({ data: 'updated' })),
+    derivePasswordHash: jest.fn(() => 'derived')
+  }
+}))
+
 jest.mock('../utils/recieveFileStream', () => ({
   receiveFileStream: jest.fn()
 }))
