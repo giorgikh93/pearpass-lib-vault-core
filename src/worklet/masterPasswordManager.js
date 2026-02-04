@@ -1,3 +1,5 @@
+import { constantTimeHashCompare } from 'pearpass-utils-password-check'
+
 import {
   encryptionAdd,
   encryptionGet,
@@ -115,7 +117,7 @@ class MasterPasswordManager {
         password: passwordBase64
       })
 
-      if (masterEncryption.hashedPassword !== derived) {
+      if (!constantTimeHashCompare(masterEncryption.hashedPassword, derived)) {
         throw new Error(
           'Provided credentials do not match existing master encryption'
         )
@@ -182,7 +184,10 @@ class MasterPasswordManager {
       password: currentPassword
     })
 
-    if (currentHashedPassword && currentHashedPassword !== derivedCurrent) {
+    if (
+      currentHashedPassword &&
+      !constantTimeHashCompare(currentHashedPassword, derivedCurrent)
+    ) {
       throw new Error('Invalid password')
     }
 
@@ -210,7 +215,7 @@ class MasterPasswordManager {
       hashedPassword: newHashedPassword
     })
 
-    if (verifyKey !== currentVaultKey) {
+    if (!constantTimeHashCompare(verifyKey, currentVaultKey, 'base64')) {
       throw new Error('Failed to verify new password encryption')
     }
 

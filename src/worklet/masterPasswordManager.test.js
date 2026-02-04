@@ -1,5 +1,11 @@
+import * as constantTimeHashCompareModule from 'pearpass-utils-password-check'
+
 import * as appDeps from './appDeps'
 import * as decryptVaultKeyModule from './decryptVaultKey'
+import * as encryptVaultKeyWithHashedPasswordModule from './encryptVaultKeyWithHashedPassword'
+import * as encryptVaultWithKeyModule from './encryptVaultWithKey'
+import * as getDecryptionKeyModule from './getDecryptionKey'
+import * as hashPasswordModule from './hashPassword'
 import { masterPasswordManager } from './masterPasswordManager'
 
 jest.mock('./appDeps', () => ({
@@ -7,20 +13,43 @@ jest.mock('./appDeps', () => ({
   encryptionGet: jest.fn(),
   getIsEncryptionInitialized: jest.fn(),
   encryptionInit: jest.fn(),
-  encryptVaultKeyWithHashedPassword: jest.fn(),
-  encryptVaultWithKey: jest.fn(),
-  getDecryptionKey: jest.fn(),
-  hashPassword: jest.fn(),
   rateLimitRecordFailure: jest.fn(),
   vaultsAdd: jest.fn(),
   closeVaultsInstance: jest.fn(),
   vaultsGet: jest.fn(),
   getIsVaultsInitialized: jest.fn(),
-  vaultsInit: jest.fn()
+  masterVaultInit: jest.fn(),
+  masterVaultInitWithNewBlindEncryption: jest.fn(),
+  vaultsList: jest.fn(),
+  closeActiveVaultInstance: jest.fn(),
+  initActiveVaultInstance: jest.fn(),
+  getIsActiveVaultInitialized: jest.fn(),
+  activeVaultGet: jest.fn(),
+  initInstanceWithNewBlindEncryption: jest.fn()
 }))
 
 jest.mock('./decryptVaultKey', () => ({
   decryptVaultKey: jest.fn()
+}))
+
+jest.mock('./encryptVaultKeyWithHashedPassword', () => ({
+  encryptVaultKeyWithHashedPassword: jest.fn()
+}))
+
+jest.mock('./encryptVaultWithKey', () => ({
+  encryptVaultWithKey: jest.fn()
+}))
+
+jest.mock('./getDecryptionKey', () => ({
+  getDecryptionKey: jest.fn()
+}))
+
+jest.mock('./hashPassword', () => ({
+  hashPassword: jest.fn()
+}))
+
+jest.mock('pearpass-utils-password-check', () => ({
+  constantTimeHashCompare: jest.fn()
 }))
 
 describe('masterPasswordManager', () => {
@@ -32,26 +61,32 @@ describe('masterPasswordManager', () => {
     it('creates and stores master password data', async () => {
       appDeps.getIsEncryptionInitialized.mockReturnValue(false)
       appDeps.encryptionGet.mockResolvedValue(undefined)
-      appDeps.hashPassword.mockReturnValue({
+      hashPasswordModule.hashPassword.mockReturnValue({
         hashedPassword: 'hashed',
         salt: 'salt'
       })
-      appDeps.encryptVaultKeyWithHashedPassword.mockReturnValue({
-        ciphertext: 'ct',
-        nonce: 'nonce'
-      })
+      encryptVaultKeyWithHashedPasswordModule.encryptVaultKeyWithHashedPassword.mockReturnValue(
+        {
+          ciphertext: 'ct',
+          nonce: 'nonce'
+        }
+      )
       decryptVaultKeyModule.decryptVaultKey.mockReturnValue('vault-key')
       appDeps.getIsVaultsInitialized.mockReturnValue(false)
 
-      const result =
-        await masterPasswordManager.createMasterPassword('pw-base64')
+      const result = await masterPasswordManager.createMasterPassword({
+        passwordBase64: 'pw-base64'
+      })
 
       expect(appDeps.encryptionInit).toHaveBeenCalled()
-      expect(appDeps.hashPassword).toHaveBeenCalledWith('pw-base64')
-      expect(appDeps.encryptVaultKeyWithHashedPassword).toHaveBeenCalledWith(
-        'hashed'
-      )
-      expect(appDeps.vaultsInit).toHaveBeenCalledWith('vault-key')
+      expect(hashPasswordModule.hashPassword).toHaveBeenCalledWith('pw-base64')
+      expect(
+        encryptVaultKeyWithHashedPasswordModule.encryptVaultKeyWithHashedPassword
+      ).toHaveBeenCalledWith('hashed')
+      expect(appDeps.masterVaultInit).toHaveBeenCalledWith({
+        encryptionKey: 'vault-key',
+        hashedPassword: 'hashed'
+      })
       expect(appDeps.vaultsAdd).toHaveBeenCalledWith('masterEncryption', {
         ciphertext: 'ct',
         nonce: 'nonce',
@@ -77,16 +112,24 @@ describe('masterPasswordManager', () => {
       appDeps.getIsVaultsInitialized.mockReturnValue(true)
       appDeps.vaultsGet.mockResolvedValue({
         salt: 'salt',
-        hashedPassword: 'derived'
+        hashedPassword: 'stored-hash'
       })
-      appDeps.getDecryptionKey.mockReturnValue('derived')
+      getDecryptionKeyModule.getDecryptionKey.mockReturnValue('derived-hash')
+      constantTimeHashCompareModule.constantTimeHashCompare.mockReturnValue(
+        true
+      )
 
-      const result = await masterPasswordManager.initWithPassword('pw-base64')
+      const result = await masterPasswordManager.initWithPassword({
+        passwordBase64: 'pw-base64'
+      })
 
-      expect(appDeps.getDecryptionKey).toHaveBeenCalledWith({
+      expect(getDecryptionKeyModule.getDecryptionKey).toHaveBeenCalledWith({
         salt: 'salt',
         password: 'pw-base64'
       })
+      expect(
+        constantTimeHashCompareModule.constantTimeHashCompare
+      ).toHaveBeenCalledWith('stored-hash', 'derived-hash')
       expect(result).toEqual({ success: true })
     })
 
@@ -98,14 +141,34 @@ describe('masterPasswordManager', () => {
         nonce: 'nonce',
         salt: 'salt'
       })
-      appDeps.getDecryptionKey.mockReturnValue('derived')
+      getDecryptionKeyModule.getDecryptionKey.mockReturnValue('derived')
       decryptVaultKeyModule.decryptVaultKey.mockReturnValue(undefined)
 
       await expect(
-        masterPasswordManager.initWithPassword('pw-base64')
+        masterPasswordManager.initWithPassword({ passwordBase64: 'pw-base64' })
       ).rejects.toThrow('Error decrypting vault key')
 
       expect(appDeps.rateLimitRecordFailure).toHaveBeenCalled()
+    })
+
+    it('throws error when hash comparison fails', async () => {
+      appDeps.getIsVaultsInitialized.mockReturnValue(true)
+      appDeps.vaultsGet.mockResolvedValue({
+        salt: 'salt',
+        hashedPassword: 'stored-hash'
+      })
+      getDecryptionKeyModule.getDecryptionKey.mockReturnValue(
+        'wrong-derived-hash'
+      )
+      constantTimeHashCompareModule.constantTimeHashCompare.mockReturnValue(
+        false
+      )
+
+      await expect(
+        masterPasswordManager.initWithPassword({ passwordBase64: 'pw-base64' })
+      ).rejects.toThrow(
+        'Provided credentials do not match existing master encryption'
+      )
     })
   })
 
@@ -119,15 +182,23 @@ describe('masterPasswordManager', () => {
         salt: 'old-salt',
         hashedPassword: 'current-hash'
       })
-      appDeps.getDecryptionKey.mockReturnValueOnce('current-hash')
+      appDeps.activeVaultGet.mockResolvedValue({ id: 'vault-1' })
+      appDeps.vaultsList.mockResolvedValue([])
+      appDeps.getIsActiveVaultInitialized.mockReturnValue(false)
+      getDecryptionKeyModule.getDecryptionKey.mockReturnValueOnce(
+        'derived-current-hash'
+      )
+      constantTimeHashCompareModule.constantTimeHashCompare
+        .mockReturnValueOnce(true) // current password verification
+        .mockReturnValueOnce(true) // vault key verification (base64)
       decryptVaultKeyModule.decryptVaultKey
         .mockReturnValueOnce('vault-key')
         .mockReturnValueOnce('vault-key')
-      appDeps.hashPassword.mockReturnValue({
+      hashPasswordModule.hashPassword.mockReturnValue({
         hashedPassword: 'new-hash',
         salt: 'new-salt'
       })
-      appDeps.encryptVaultWithKey.mockReturnValue({
+      encryptVaultWithKeyModule.encryptVaultWithKey.mockReturnValue({
         ciphertext: 'new-ct',
         nonce: 'new-nonce'
       })
@@ -138,15 +209,17 @@ describe('masterPasswordManager', () => {
         currentPassword: 'curr-pw'
       })
 
-      expect(appDeps.getDecryptionKey).toHaveBeenCalledWith({
+      expect(getDecryptionKeyModule.getDecryptionKey).toHaveBeenCalledWith({
         salt: 'old-salt',
         password: 'curr-pw'
       })
-      expect(appDeps.hashPassword).toHaveBeenCalledWith('new-pw')
-      expect(appDeps.encryptVaultWithKey).toHaveBeenCalledWith(
-        'new-hash',
-        'vault-key'
-      )
+      expect(
+        constantTimeHashCompareModule.constantTimeHashCompare
+      ).toHaveBeenCalledWith('current-hash', 'derived-current-hash')
+      expect(hashPasswordModule.hashPassword).toHaveBeenCalledWith('new-pw')
+      expect(
+        encryptVaultWithKeyModule.encryptVaultWithKey
+      ).toHaveBeenCalledWith('new-hash', 'vault-key')
       expect(appDeps.vaultsAdd).toHaveBeenCalledWith('masterEncryption', {
         ciphertext: 'new-ct',
         nonce: 'new-nonce',
@@ -165,13 +238,34 @@ describe('masterPasswordManager', () => {
         nonce: 'new-nonce'
       })
     })
+
+    it('throws error when current password verification fails', async () => {
+      appDeps.getIsEncryptionInitialized.mockReturnValue(true)
+      appDeps.getIsVaultsInitialized.mockReturnValueOnce(true)
+      appDeps.vaultsGet.mockResolvedValue({
+        ciphertext: 'old-ct',
+        nonce: 'old-nonce',
+        salt: 'old-salt',
+        hashedPassword: 'current-hash'
+      })
+      getDecryptionKeyModule.getDecryptionKey.mockReturnValueOnce('wrong-hash')
+      constantTimeHashCompareModule.constantTimeHashCompare.mockReturnValueOnce(
+        false
+      )
+
+      await expect(
+        masterPasswordManager.updateMasterPassword({
+          newPassword: 'new-pw',
+          currentPassword: 'wrong-pw'
+        })
+      ).rejects.toThrow('Invalid password')
+    })
   })
 
   describe('initWithCredentials', () => {
     it('initializes vaults with provided credentials', async () => {
       appDeps.getIsEncryptionInitialized.mockReturnValue(false)
       decryptVaultKeyModule.decryptVaultKey.mockReturnValue('vault-key')
-      appDeps.vaultsInit.mockResolvedValue()
 
       const result = await masterPasswordManager.initWithCredentials({
         ciphertext: 'ct',
@@ -185,7 +279,10 @@ describe('masterPasswordManager', () => {
         nonce: 'nonce',
         hashedPassword: 'hash'
       })
-      expect(appDeps.vaultsInit).toHaveBeenCalledWith('vault-key')
+      expect(appDeps.masterVaultInit).toHaveBeenCalledWith({
+        encryptionKey: 'vault-key',
+        hashedPassword: 'hash'
+      })
       expect(result).toEqual({ success: true })
     })
 
